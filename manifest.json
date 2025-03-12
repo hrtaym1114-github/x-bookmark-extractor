@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "X.com ブックマーク抽出ツール",
+  "version": "1.0",
+  "description": "X.com（旧Twitter）のブックマークから指定した件数のツイートを自動的にテキスト抽出するツール",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["https://x.com/*", "https://twitter.com/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
