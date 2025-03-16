@@ -5,9 +5,12 @@
   <title>X.com ブックマーク抽出ツール</title>
   <style>
     body {
-      width: 300px;
+      width: 350px;
       padding: 15px;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      min-height: 400px;
     }
     h1 {
       font-size: 16px;
@@ -41,26 +44,10 @@
     button:hover {
       background-color: #0c85d0;
     }
-    #format-options {
-      margin-bottom: 15px;
-    }
-    #format-options label {
-      display: inline-block;
-      margin-right: 10px;
-      font-weight: bold;
-    }
-    #output-format {
-      padding: 5px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-    }
-    .button-group {
-      display: flex;
-      gap: 10px;
-      margin-top: 10px;
-    }
-    .action-btn {
+    #main-content {
       flex: 1;
+      display: flex;
+      flex-direction: column;
     }
     #status {
       margin-top: 15px;
@@ -78,18 +65,79 @@
     }
     #result {
       margin-top: 15px;
-      max-height: 200px;
+      flex: 1;
       overflow-y: auto;
       border: 1px solid #ccc;
       padding: 10px;
       border-radius: 4px;
       display: none;
     }
-    .copy-btn {
+    #tweets-container {
+      margin-bottom: 10px;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+    .action-panel {
+      position: sticky;
+      bottom: 0;
+      background-color: #f8f9fa;
+      border-top: 1px solid #dee2e6;
+      padding: 10px 0;
       margin-top: 10px;
-      background-color: #6c757d;
+      display: none;
+    }
+    .format-selector {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 10px;
+      gap: 10px;
+    }
+    .format-btn {
+      flex: 1;
+      max-width: 120px;
+      text-align: center;
+      padding: 8px;
+      border-radius: 20px;
+      background-color: #e9ecef;
+      border: 1px solid #ced4da;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s ease;
+    }
+    .format-btn.active {
+      background-color: #1DA1F2;
+      color: white;
+      border-color: #1DA1F2;
+    }
+    .action-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+    .action-btn {
+      flex: 1;
+      max-width: 150px;
+      padding: 8px;
+      text-align: center;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s ease;
+    }
+    .copy-btn {
+      background-color: #28a745;
+      color: white;
+      border: none;
     }
     .copy-btn:hover {
+      background-color: #218838;
+    }
+    .download-btn {
+      background-color: #6c757d;
+      color: white;
+      border: none;
+    }
+    .download-btn:hover {
       background-color: #5a6268;
     }
   </style>
@@ -97,28 +145,30 @@
 <body>
   <h1>X.com ブックマーク抽出ツール</h1>
   
-  <div class="form-group">
-    <label for="count">抽出するツイート数:</label>
-    <input type="number" id="count" min="1" max="100" value="10">
+  <div id="main-content">
+    <div class="form-group">
+      <label for="count">抽出するツイート数:</label>
+      <input type="number" id="count" min="1" max="100" value="10">
+    </div>
+    
+    <button id="extract-btn">ブックマークからツイートを抽出</button>
+    
+    <div id="status"></div>
+    
+    <div id="result">
+      <h3>抽出結果:</h3>
+      <div id="tweets-container"></div>
+    </div>
   </div>
   
-  <button id="extract-btn">ブックマークからツイートを抽出</button>
-  
-  <div id="status"></div>
-  
-  <div id="result">
-    <h3>抽出結果:</h3>
-    <div id="format-options">
-      <label>出力形式:</label>
-      <select id="output-format">
-        <option value="text">テキスト</option>
-        <option value="csv">CSV</option>
-      </select>
+  <div id="action-panel" class="action-panel">
+    <div class="format-selector">
+      <div id="text-format" class="format-btn active">テキスト</div>
+      <div id="csv-format" class="format-btn">CSV</div>
     </div>
-    <div id="tweets-container"></div>
-    <div class="button-group">
-      <button id="copy-btn" class="action-btn">すべてコピー</button>
-      <button id="download-btn" class="action-btn">ダウンロード</button>
+    <div class="action-buttons">
+      <button id="copy-btn" class="action-btn copy-btn">コピー</button>
+      <button id="download-btn" class="action-btn download-btn">ダウンロード</button>
     </div>
   </div>
   

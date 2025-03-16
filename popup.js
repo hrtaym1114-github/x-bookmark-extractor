@@ -2,14 +2,18 @@ document.addEventListener('DOMContentLoaded', function() {
   const extractBtn = document.getElementById('extract-btn');
   const copyBtn = document.getElementById('copy-btn');
   const downloadBtn = document.getElementById('download-btn');
-  const outputFormat = document.getElementById('output-format');
+  const textFormatBtn = document.getElementById('text-format');
+  const csvFormatBtn = document.getElementById('csv-format');
   const countInput = document.getElementById('count');
   const statusDiv = document.getElementById('status');
   const resultDiv = document.getElementById('result');
   const tweetsContainer = document.getElementById('tweets-container');
+  const actionPanel = document.getElementById('action-panel');
   
   // 抽出したツイートデータを保存
   let extractedTweets = [];
+  // 現在の出力形式
+  let currentFormat = 'text';
   
   console.log('X.com ブックマーク抽出ツール: ポップアップが読み込まれました');
   
@@ -55,14 +59,32 @@ document.addEventListener('DOMContentLoaded', function() {
         displayTweets(tweets);
         showStatus(`${tweets.length}件のツイートを抽出しました`, 'success');
         resultDiv.style.display = 'block';
+        actionPanel.style.display = 'block';
       }
     );
   });
   
-  // 出力形式が変更されたときのイベント
-  outputFormat.addEventListener('change', function() {
-    if (extractedTweets.length > 0) {
-      displayTweets(extractedTweets);
+  // テキスト形式ボタンのクリックイベント
+  textFormatBtn.addEventListener('click', function() {
+    if (currentFormat !== 'text') {
+      currentFormat = 'text';
+      textFormatBtn.classList.add('active');
+      csvFormatBtn.classList.remove('active');
+      if (extractedTweets.length > 0) {
+        displayTweets(extractedTweets);
+      }
+    }
+  });
+  
+  // CSV形式ボタンのクリックイベント
+  csvFormatBtn.addEventListener('click', function() {
+    if (currentFormat !== 'csv') {
+      currentFormat = 'csv';
+      csvFormatBtn.classList.add('active');
+      textFormatBtn.classList.remove('active');
+      if (extractedTweets.length > 0) {
+        displayTweets(extractedTweets);
+      }
     }
   });
   
@@ -75,7 +97,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     let content = '';
     
-    if (outputFormat.value === 'csv') {
+    if (currentFormat === 'csv') {
       content = generateCSV(extractedTweets);
     } else {
       content = generateText(extractedTweets);
@@ -101,7 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let filename = '';
     let mimeType = '';
     
-    if (outputFormat.value === 'csv') {
+    if (currentFormat === 'csv') {
       content = generateCSV(extractedTweets);
       filename = 'x_bookmarks_' + new Date().toISOString().slice(0, 10) + '.csv';
       mimeType = 'text/csv';
@@ -152,7 +174,7 @@ document.addEventListener('DOMContentLoaded', function() {
       tweetDiv.style.paddingBottom = '10px';
       tweetDiv.style.borderBottom = index < tweets.length - 1 ? '1px solid #eee' : 'none';
       
-      if (outputFormat.value === 'text') {
+      if (currentFormat === 'text') {
         // テキスト形式で表示
         tweetDiv.textContent = tweet.text;
       } else {
