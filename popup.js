@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const textFormatBtn = document.getElementById('text-format');
   const csvFormatBtn = document.getElementById('csv-format');
   const countInput = document.getElementById('count');
+  const skipDuplicatesCheckbox = document.getElementById('skip-duplicates');
   const statusDiv = document.getElementById('status');
   const resultDiv = document.getElementById('result');
   const tweetsContainer = document.getElementById('tweets-container');
@@ -14,12 +15,75 @@ document.addEventListener('DOMContentLoaded', function() {
   let extractedTweets = [];
   // 現在の出力形式
   let currentFormat = 'text';
+  // 保存済みの抽出済みツイートID
+  let savedTweetIds = new Set();
   
   console.log('X.com ブックマーク抽出ツール: ポップアップが読み込まれました');
+  
+  // 保存されたツイートIDを読み込む
+  loadSavedTweetIds();
+  
+  // 保存済みツイートIDをロードする関数
+  function loadSavedTweetIds() {
+    chrome.storage.local.get(['savedTweetIds'], function(result) {
+      if (result.savedTweetIds && Array.isArray(result.savedTweetIds)) {
+        savedTweetIds = new Set(result.savedTweetIds);
+        console.log(`${savedTweetIds.size}件の過去のツイートIDが読み込まれました`);
+      } else {
+        savedTweetIds = new Set();
+        console.log('保存済みのツイートIDはありません');
+      }
+    });
+  }
+  
+  // ツイートIDを保存する関数
+  function saveTweetIds(newTweets) {
+    // 保存するツイートIDの最大数（過去10000件まで保持）
+    const MAX_SAVED_TWEETS = 10000;
+    
+    // 新しいツイートIDを抽出して追加
+    const tweetIds = newTweets.map(tweet => {
+      // ツイートURLからIDを抽出
+      if (tweet.tweetUrl) {
+        const urlParts = tweet.tweetUrl.split('/');
+        return urlParts[urlParts.length - 1];
+      }
+      // URLが無い場合はタイムスタンプとテキスト先頭を組み合わせて一意のIDを生成
+      return `${tweet.timestamp}_${tweet.tweetText.substring(0, 30)}`;
+    });
+    
+    // 既存のIDと新しいIDを結合
+    const allIds = [...savedTweetIds, ...tweetIds];
+    // 重複を除去して最新のMAX_SAVED_TWEETS件だけを保持
+    const uniqueIds = [...new Set(allIds)].slice(-MAX_SAVED_TWEETS);
+    
+    // ストレージに保存
+    chrome.storage.local.set({savedTweetIds: uniqueIds}, function() {
+      console.log(`${uniqueIds.length}件のツイートIDを保存しました`);
+      // メモリ上のセットも更新
+      savedTweetIds = new Set(uniqueIds);
+    });
+  }
+  
+  // ツイートが既に保存済みかチェックする関数
+  function isTweetSaved(tweet) {
+    // ツイートURLからIDを抽出
+    let tweetId = null;
+    if (tweet.tweetUrl) {
+      const urlParts = tweet.tweetUrl.split('/');
+      tweetId = urlParts[urlParts.length - 1];
+    } else {
+      // URLが無い場合はタイムスタンプとテキスト先頭を組み合わせて一意のIDを生成
+      tweetId = `${tweet.timestamp}_${tweet.tweetText.substring(0, 30)}`;
+    }
+    
+    return savedTweetIds.has(tweetId);
+  }
   
   // 抽出ボタンのクリックイベント
   extractBtn.addEventListener('click', function() {
     const count = parseInt(countInput.value);
+    const skipDuplicates = skipDuplicatesCheckbox.checked;
     
     if (isNaN(count) || count < 1) {
       showStatus('エラー: 有効な数値を入力してください', 'error');
@@ -30,7 +94,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // バックグラウンドスクリプトにメッセージを送信
     chrome.runtime.sendMessage(
-      { action: 'extractTweets', count: count },
+      { 
+        action: 'extractTweets', 
+        count: count,
+        skipDuplicates: skipDuplicates 
+      },
       function(response) {
         console.log('ポップアップがレスポンスを受信:', response);
         
@@ -45,19 +113,43 @@ document.addEventListener('DOMContentLoaded', function() {
           return;
         }
         
-        const tweets = response.tweets;
+        let tweets = response.tweets;
         
         if (tweets.length === 0) {
           showStatus('ツイートが見つかりませんでした', 'error');
           return;
         }
         
+        // 重複排除オプションが有効で、保存済みのツイートがある場合
+        if (skipDuplicates && savedTweetIds.size > 0) {
+          // 抽出前のツイート数
+          const beforeCount = tweets.length;
+          
+          // 保存済みでないツイートのみをフィルタリング
+          tweets = tweets.filter(tweet => !isTweetSaved(tweet));
+          
+          // 除外されたツイート数
+          const excludedCount = beforeCount - tweets.length;
+          
+          if (excludedCount > 0) {
+            console.log(`${excludedCount}件の重複ツイートを除外しました`);
+          }
+          
+          if (tweets.length === 0) {
+            showStatus(`ツイートが見つかりませんでした（${excludedCount}件は過去に取得済み）`, 'error');
+            return;
+          }
+        }
+        
+        // 新しいツイートIDを保存（重複排除オプションに関わらず常に保存）
+        saveTweetIds(tweets);
+        
         // 抽出したツイートを保存
         extractedTweets = tweets;
         
         // 結果を表示
         displayTweets(tweets);
-        showStatus(`${tweets.length}件のツイートを抽出しました`, 'success');
+        showStatus(`${tweets.length}件のツイートを抽出しました${skipDuplicates ? ' (重複除外)' : ''}`, 'success');
         resultDiv.style.display = 'block';
         actionPanel.style.display = 'block';
       }

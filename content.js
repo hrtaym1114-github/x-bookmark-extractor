@@ -16,8 +16,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   if (request.action === 'extractTweets') {
     const count = request.count || 10;
+    const skipDuplicates = request.skipDuplicates || false;
     
-    extractTweets(count)
+    extractTweets(count, skipDuplicates)
       .then(tweets => {
         sendResponse({ success: true, tweets: tweets });
       })
@@ -30,7 +31,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ツイートを抽出する関数
-function extractTweets(count) {
+function extractTweets(count, skipDuplicates = false) {
   return new Promise((resolve, reject) => {
     try {
       const tweets = [];
@@ -57,6 +58,12 @@ function extractTweets(count) {
       let scrollStrategy = "normal"; // "normal", "aggressive", "reset"
       let consecutiveAggressiveScrolls = 0;
       const maxConsecutiveAggressiveScrolls = 3;
+      
+      // 重複排除オプションが有効な場合は、取得目標数を増やす
+      const targetCount = skipDuplicates ? Math.min(count * 2, count + 300) : count;
+      
+      // スクロール開始時にログ出力
+      console.log(`ツイート抽出を開始します: 目標=${count}件, 重複排除=${skipDuplicates ? 'あり' : 'なし'}, 実際の取得目標=${targetCount}件`);
       
       // ツイート要素を取得する関数
       function getTweetElements() {
@@ -323,7 +330,7 @@ function extractTweets(count) {
         
         // 新しいツイートを追加（重複を排除）
         const previousLength = tweets.length;
-        for (let i = 0; i < tweetElements.length && tweets.length < count; i++) {
+        for (let i = 0; i < tweetElements.length && tweets.length < targetCount; i++) {
           const tweetElement = tweetElements[i];
           
           // ツイートの一意のIDを取得（時間要素のハッシュ値などを使用）
@@ -351,7 +358,7 @@ function extractTweets(count) {
         
         // 新しいツイートが読み込まれた場合にログ出力
         if (tweets.length > previousLength) {
-          console.log(`新しく${tweets.length - previousLength}件のツイートを抽出しました（合計: ${tweets.length}/${count}件）`);
+          console.log(`新しく${tweets.length - previousLength}件のツイートを抽出しました（合計: ${tweets.length}/${targetCount}件）`);
           // 新しいツイートが読み込まれたらスクロール戦略をリセット
           if (scrollStrategy !== "normal") {
             console.log(`スクロール戦略を通常モードに戻します`);
@@ -389,7 +396,7 @@ function extractTweets(count) {
         }
         
         // 目標数に達したか、最大スクロール回数に達した場合、または新しいツイートが一定回数読み込まれない場合は終了
-        if (tweets.length >= count || scrollAttempts >= maxScrollAttempts || noNewTweetsCounter >= maxNoNewTweetsAttempts) {
+        if (tweets.length >= targetCount || scrollAttempts >= maxScrollAttempts || noNewTweetsCounter >= maxNoNewTweetsAttempts) {
           // MutationObserverを停止
           if (observer) {
             observer.disconnect();
@@ -398,7 +405,14 @@ function extractTweets(count) {
           const endTime = new Date();
           const durationSeconds = Math.floor((endTime - startTime) / 1000);
           console.log(`ツイート抽出完了: ${tweets.length}件（目標: ${count}件）, 所要時間: ${durationSeconds}秒`);
-          resolve(tweets.slice(0, count));
+          
+          // 重複排除オプションが有効な場合は、実際に必要な数のツイートを返す
+          if (skipDuplicates) {
+            const uniqueTweets = tweets.slice(0, count);
+            resolve(uniqueTweets);
+          } else {
+            resolve(tweets.slice(0, count));
+          }
           return;
         }
         
