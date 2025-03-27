@@ -34,8 +34,29 @@ function extractTweets(count) {
   return new Promise((resolve, reject) => {
     try {
       const tweets = [];
-      const maxScrollAttempts = 20;
+      const processedTweetIds = new Set(); // 既に処理済みのツイートIDを保持するSet
+      
+      // 最大スクロール回数を増やす（1000件のツイートを取得するために十分な値）
+      const maxScrollAttempts = Math.max(300, Math.ceil(count / 2));
       let scrollAttempts = 0;
+      
+      // 前回のツイート数を記録して、新しいツイートが読み込まれているか確認
+      let previousTweetCount = 0;
+      let noNewTweetsCounter = 0;
+      const maxNoNewTweetsAttempts = 15; // 新しいツイートが読み込まれない状態が続く最大回数をさらに増やす
+      
+      // 進行状況表示のための変数
+      const startTime = new Date();
+      let lastLogTime = startTime;
+      
+      // DOM変更を監視するMutationObserverの設定
+      let observer = null;
+      let isWaitingForMutation = false;
+      
+      // スクロール戦略変数
+      let scrollStrategy = "normal"; // "normal", "aggressive", "reset"
+      let consecutiveAggressiveScrolls = 0;
+      const maxConsecutiveAggressiveScrolls = 3;
       
       // ツイート要素を取得する関数
       function getTweetElements() {
@@ -292,25 +313,208 @@ function extractTweets(count) {
       // スクロールしながらツイートを収集
       function scrollAndCollect() {
         const tweetElements = getTweetElements();
+        const currentTime = new Date();
         
-        // 新しいツイートを追加
-        for (let i = tweets.length; i < tweetElements.length && i < count; i++) {
-          const tweetData = extractTextFromTweet(tweetElements[i]);
-          if (tweetData) {
-            tweets.push(tweetData);
+        // 10秒ごとに詳細なログを出力
+        if (currentTime - lastLogTime > 10000) {
+          console.log(`経過時間: ${Math.floor((currentTime - startTime) / 1000)}秒, スクロール試行: ${scrollAttempts + 1}/${maxScrollAttempts}, 検出ツイート: ${tweetElements.length}件, 抽出済み: ${tweets.length}件`);
+          lastLogTime = currentTime;
+        }
+        
+        // 新しいツイートを追加（重複を排除）
+        const previousLength = tweets.length;
+        for (let i = 0; i < tweetElements.length && tweets.length < count; i++) {
+          const tweetElement = tweetElements[i];
+          
+          // ツイートの一意のIDを取得（時間要素のハッシュ値などを使用）
+          let tweetId = null;
+          const timeElement = tweetElement.querySelector('time');
+          if (timeElement) {
+            const timeStamp = timeElement.getAttribute('datetime');
+            const tweetTextElement = tweetElement.querySelector('div[data-testid="tweetText"]');
+            const tweetTextSnippet = tweetTextElement ? tweetTextElement.textContent.substring(0, 50) : '';
+            tweetId = `${timeStamp}_${tweetTextSnippet}`;
+          } else {
+            // 代替の識別子を使用
+            tweetId = `tweet_${i}_${Math.random().toString(36).substring(2, 15)}`;
+          }
+          
+          // 既に処理済みのツイートでなければ追加
+          if (!processedTweetIds.has(tweetId)) {
+            processedTweetIds.add(tweetId);
+            const tweetData = extractTextFromTweet(tweetElement);
+            if (tweetData) {
+              tweets.push(tweetData);
+            }
           }
         }
         
-        // 目標数に達したか、最大スクロール回数に達した場合は終了
-        if (tweets.length >= count || scrollAttempts >= maxScrollAttempts) {
+        // 新しいツイートが読み込まれた場合にログ出力
+        if (tweets.length > previousLength) {
+          console.log(`新しく${tweets.length - previousLength}件のツイートを抽出しました（合計: ${tweets.length}/${count}件）`);
+          // 新しいツイートが読み込まれたらスクロール戦略をリセット
+          if (scrollStrategy !== "normal") {
+            console.log(`スクロール戦略を通常モードに戻します`);
+            scrollStrategy = "normal";
+            consecutiveAggressiveScrolls = 0;
+          }
+        }
+        
+        // 新しいツイートが読み込まれているか確認
+        if (tweets.length === previousTweetCount) {
+          noNewTweetsCounter++;
+          console.log(`新しいツイートが読み込まれていません: ${noNewTweetsCounter}/${maxNoNewTweetsAttempts}`);
+          
+          // 新しいツイートが読み込まれない状態が続く場合、スクロール戦略を変更
+          if (noNewTweetsCounter >= 3 && noNewTweetsCounter < maxNoNewTweetsAttempts) {
+            // 通常→積極的→リセット の順でスクロール戦略を変更
+            if (scrollStrategy === "normal") {
+              scrollStrategy = "aggressive";
+              console.log("スクロール戦略を積極的モードに変更します");
+            } else if (scrollStrategy === "aggressive") {
+              consecutiveAggressiveScrolls++;
+              if (consecutiveAggressiveScrolls >= maxConsecutiveAggressiveScrolls) {
+                scrollStrategy = "reset";
+                console.log("スクロール戦略をリセットモードに変更します");
+                consecutiveAggressiveScrolls = 0;
+              }
+            } else if (scrollStrategy === "reset") {
+              scrollStrategy = "normal";
+              console.log("スクロール戦略を通常モードに戻します");
+            }
+          }
+        } else {
+          noNewTweetsCounter = 0;
+          previousTweetCount = tweets.length;
+        }
+        
+        // 目標数に達したか、最大スクロール回数に達した場合、または新しいツイートが一定回数読み込まれない場合は終了
+        if (tweets.length >= count || scrollAttempts >= maxScrollAttempts || noNewTweetsCounter >= maxNoNewTweetsAttempts) {
+          // MutationObserverを停止
+          if (observer) {
+            observer.disconnect();
+          }
+          
+          const endTime = new Date();
+          const durationSeconds = Math.floor((endTime - startTime) / 1000);
+          console.log(`ツイート抽出完了: ${tweets.length}件（目標: ${count}件）, 所要時間: ${durationSeconds}秒`);
           resolve(tweets.slice(0, count));
           return;
         }
         
-        // スクロールして続行
-        scrollAttempts++;
-        window.scrollBy(0, 800);
-        setTimeout(scrollAndCollect, 500);
+        // MutationObserverを使用して新しいコンテンツのロードを検出
+        if (observer === null) {
+          // メインコンテンツエリアを特定
+          const mainElement = document.querySelector('main[role="main"]');
+          const targetNode = mainElement || document.body;
+          
+          observer = new MutationObserver((mutations) => {
+            if (isWaitingForMutation) {
+              console.log(`DOM変更を検出: ${mutations.length}件の変更`);
+              isWaitingForMutation = false;
+              
+              // 短い遅延後に次のスクロールサイクルを開始
+              setTimeout(() => {
+                scrollAndCollect();
+              }, 300);
+            }
+          });
+          
+          observer.observe(targetNode, { 
+            childList: true, 
+            subtree: true, 
+            attributes: false,
+            characterData: false
+          });
+        }
+        
+        // ブラウザのレンダリングを待ってからスクロール
+        requestAnimationFrame(() => {
+          // スクロールして続行
+          scrollAttempts++;
+          
+          // 現在のスクロール戦略に基づいてスクロール
+          if (scrollStrategy === "normal") {
+            // 通常のスクロール
+            if (scrollAttempts % 5 === 0) {
+              // 5回ごとにより大きなスクロールを実行
+              window.scrollBy(0, 2000);
+              console.log("大きなスクロールを実行");
+            } else {
+              window.scrollBy(0, 1200);
+            }
+          } else if (scrollStrategy === "aggressive") {
+            // 積極的なスクロール：ページ最下部へ
+            window.scrollTo(0, document.body.scrollHeight);
+            console.log("積極的なスクロールを実行: ページ最下部まで移動");
+            
+            // タイムラインコンテナを特定して、表示を更新
+            try {
+              const timelineContainer = document.querySelector('[aria-label="タイムライン: ブックマーク"]') || 
+                                       document.querySelector('[data-testid="primaryColumn"]');
+              
+              if (timelineContainer) {
+                // コンテナの表示状態を一時的に変更して強制的に再描画
+                timelineContainer.style.opacity = "0.99";
+                setTimeout(() => {
+                  timelineContainer.style.opacity = "";
+                }, 50);
+              }
+            } catch (e) {
+              console.log("タイムラインコンテナの操作に失敗:", e);
+            }
+          } else if (scrollStrategy === "reset") {
+            // リセットモード：ページトップに戻ってから少し下へ
+            window.scrollTo(0, 0);
+            console.log("スクロールをリセット: ページトップに戻ります");
+            
+            // 少し待ってから下へスクロール
+            setTimeout(() => {
+              window.scrollBy(0, 500);
+              console.log("リセット後、少し下へスクロール");
+            }, 500);
+          }
+          
+          // スクロール後、DOM更新を待ってから次の処理を実行
+          setTimeout(() => {
+            // スクロール後にページの読み込みを確認
+            const currentElements = getTweetElements();
+            if (currentElements.length > tweetElements.length) {
+              console.log(`スクロール後に${currentElements.length - tweetElements.length}件の新しいツイート要素を検出`);
+              // 新しい要素が見つかった場合は直ちに次のサイクルを開始
+              setTimeout(scrollAndCollect, 300);
+            } else {
+              // 「もっと見る」ボタンがあれば自動でクリック
+              const showMoreButtons = Array.from(document.querySelectorAll('div[role="button"]')).filter(
+                button => button.textContent && (
+                  button.textContent.includes('さらに表示') || 
+                  button.textContent.includes('もっと見る') ||
+                  button.textContent.includes('Show more')
+                )
+              );
+              
+              if (showMoreButtons.length > 0) {
+                console.log("「もっと見る」ボタンを検出しました。クリックします。");
+                showMoreButtons[0].click();
+                // クリック後に少し待ってから次のサイクルを開始
+                setTimeout(scrollAndCollect, 1000);
+              } else {
+                // 新しい要素が見つからなかった場合はMutation待ちに移行
+                console.log("DOM変更を待機中...");
+                isWaitingForMutation = true;
+                
+                // 一定時間後にもMutation検出がなければタイムアウトとして次のサイクルを開始
+                setTimeout(() => {
+                  if (isWaitingForMutation) {
+                    console.log("DOM変更待機タイムアウト。次のサイクルを開始します。");
+                    isWaitingForMutation = false;
+                    scrollAndCollect();
+                  }
+                }, 2000);
+              }
+            }
+          }, 700);
+        });
       }
       
       // 処理開始
