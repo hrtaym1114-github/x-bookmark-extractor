@@ -3,10 +3,20 @@
   "name": "X.com ブックマーク抽出ツール",
   "version": "1.0",
   "description": "X.com（旧Twitter）のブックマークから指定した件数のツイートを自動的にテキスト抽出するツール",
+  "icons": {
+    "16": "images/icon16.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  },
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": ["https://x.com/*", "https://twitter.com/*"],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png",
+      "128": "images/icon128.png"
+    }
   },
   "background": {
     "service_worker": "background.js",

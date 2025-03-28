@@ -11,45 +11,91 @@ document.addEventListener('DOMContentLoaded', function() {
   const tweetsContainer = document.getElementById('tweets-container');
   const actionPanel = document.getElementById('action-panel');
   
+  // 履歴関連の要素
+  const historyInfoDiv = document.getElementById('history-info');
+  const savedCountSpan = document.getElementById('saved-count');
+  const viewHistoryBtn = document.getElementById('view-history-btn');
+  const clearHistoryBtn = document.getElementById('clear-history-btn');
+  const historyModal = document.getElementById('history-modal');
+  const historyList = document.getElementById('history-list');
+  const modalClose = document.querySelector('.modal-close');
+  
   // 抽出したツイートデータを保存
   let extractedTweets = [];
   // 現在の出力形式
   let currentFormat = 'text';
   // 保存済みの抽出済みツイートID
   let savedTweetIds = new Set();
+  // 保存済みのツイートメタデータ
+  let savedTweetMetadata = {};
   
   console.log('X.com ブックマーク抽出ツール: ポップアップが読み込まれました');
   
-  // 保存されたツイートIDを読み込む
-  loadSavedTweetIds();
+  // 保存されたツイートIDとメタデータを読み込む
+  loadSavedTweetData();
   
-  // 保存済みツイートIDをロードする関数
-  function loadSavedTweetIds() {
-    chrome.storage.local.get(['savedTweetIds'], function(result) {
+  // 保存済みツイートデータをロードする関数
+  function loadSavedTweetData() {
+    chrome.storage.local.get(['savedTweetIds', 'savedTweetMetadata'], function(result) {
+      // ツイートIDの読み込み
       if (result.savedTweetIds && Array.isArray(result.savedTweetIds)) {
         savedTweetIds = new Set(result.savedTweetIds);
         console.log(`${savedTweetIds.size}件の過去のツイートIDが読み込まれました`);
+        
+        // 履歴情報を表示
+        historyInfoDiv.style.display = 'block';
+        savedCountSpan.textContent = savedTweetIds.size;
+        
+        // 履歴があれば履歴確認・クリアボタンを有効化
+        if (savedTweetIds.size > 0) {
+          viewHistoryBtn.disabled = false;
+          clearHistoryBtn.disabled = false;
+        } else {
+          viewHistoryBtn.disabled = true;
+          clearHistoryBtn.disabled = true;
+        }
       } else {
         savedTweetIds = new Set();
         console.log('保存済みのツイートIDはありません');
+        historyInfoDiv.style.display = 'none';
       }
+      
+      // ツイートメタデータの読み込み
+      savedTweetMetadata = result.savedTweetMetadata || {};
     });
   }
   
-  // ツイートIDを保存する関数
+  // ツイートデータを保存する関数
   function saveTweetIds(newTweets) {
     // 保存するツイートIDの最大数（過去10000件まで保持）
     const MAX_SAVED_TWEETS = 10000;
     
-    // 新しいツイートIDを抽出して追加
-    const tweetIds = newTweets.map(tweet => {
+    // 新しいツイートIDとメタデータを抽出して追加
+    const tweetIds = [];
+    const newMetadata = {};
+    
+    newTweets.forEach(tweet => {
       // ツイートURLからIDを抽出
+      let tweetId;
       if (tweet.tweetUrl) {
         const urlParts = tweet.tweetUrl.split('/');
-        return urlParts[urlParts.length - 1];
+        tweetId = urlParts[urlParts.length - 1];
+      } else {
+        // URLが無い場合はタイムスタンプとテキスト先頭を組み合わせて一意のIDを生成
+        tweetId = `${tweet.timestamp}_${tweet.tweetText.substring(0, 30)}`;
       }
-      // URLが無い場合はタイムスタンプとテキスト先頭を組み合わせて一意のIDを生成
-      return `${tweet.timestamp}_${tweet.tweetText.substring(0, 30)}`;
+      
+      tweetIds.push(tweetId);
+      
+      // メタデータを保存
+      newMetadata[tweetId] = {
+        userName: tweet.userName,
+        userId: tweet.userId,
+        date: tweet.date,
+        tweetText: tweet.tweetText.substring(0, 100) + (tweet.tweetText.length > 100 ? '...' : ''),
+        tweetUrl: tweet.tweetUrl,
+        extractedAt: new Date().toISOString()
+      };
     });
     
     // 既存のIDと新しいIDを結合
@@ -57,12 +103,30 @@ document.addEventListener('DOMContentLoaded', function() {
     // 重複を除去して最新のMAX_SAVED_TWEETS件だけを保持
     const uniqueIds = [...new Set(allIds)].slice(-MAX_SAVED_TWEETS);
     
+    // メタデータを更新
+    const updatedMetadata = {...savedTweetMetadata, ...newMetadata};
+    
     // ストレージに保存
-    chrome.storage.local.set({savedTweetIds: uniqueIds}, function() {
-      console.log(`${uniqueIds.length}件のツイートIDを保存しました`);
-      // メモリ上のセットも更新
-      savedTweetIds = new Set(uniqueIds);
-    });
+    chrome.storage.local.set(
+      {
+        savedTweetIds: uniqueIds,
+        savedTweetMetadata: updatedMetadata
+      }, 
+      function() {
+        console.log(`${uniqueIds.length}件のツイートIDを保存しました`);
+        // メモリ上のデータも更新
+        savedTweetIds = new Set(uniqueIds);
+        savedTweetMetadata = updatedMetadata;
+        
+        // 履歴情報を更新
+        historyInfoDiv.style.display = 'block';
+        savedCountSpan.textContent = savedTweetIds.size;
+        
+        // ボタンの有効化
+        viewHistoryBtn.disabled = false;
+        clearHistoryBtn.disabled = false;
+      }
+    );
   }
   
   // ツイートが既に保存済みかチェックする関数
@@ -179,6 +243,130 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
   });
+  
+  // 履歴確認ボタンのクリックイベント
+  viewHistoryBtn.addEventListener('click', function() {
+    displayHistory();
+    historyModal.style.display = 'flex';
+  });
+  
+  // 履歴クリアボタンのクリックイベント
+  clearHistoryBtn.addEventListener('click', function() {
+    if (confirm('過去に取得したブックマークの履歴をクリアしますか？')) {
+      clearHistory();
+    }
+  });
+  
+  // モーダルを閉じるボタンのクリックイベント
+  modalClose.addEventListener('click', function() {
+    historyModal.style.display = 'none';
+  });
+  
+  // モーダル外をクリックしたときにモーダルを閉じる
+  historyModal.addEventListener('click', function(event) {
+    if (event.target === historyModal) {
+      historyModal.style.display = 'none';
+    }
+  });
+  
+  // 履歴を表示する関数
+  function displayHistory() {
+    historyList.innerHTML = '';
+    
+    if (savedTweetIds.size === 0) {
+      const emptyMessage = document.createElement('div');
+      emptyMessage.textContent = '取得済みのブックマークはありません';
+      emptyMessage.style.padding = '15px';
+      emptyMessage.style.textAlign = 'center';
+      historyList.appendChild(emptyMessage);
+      return;
+    }
+    
+    // 日付でグループ化するためのオブジェクト
+    const groupedByDate = {};
+    
+    // savedTweetIdsから各IDのメタデータを取得してグループ化
+    [...savedTweetIds].forEach(tweetId => {
+      const metadata = savedTweetMetadata[tweetId];
+      if (metadata) {
+        // 抽出日を取得（YYYY-MM-DD形式）
+        const extractedDate = metadata.extractedAt ? metadata.extractedAt.split('T')[0] : '不明';
+        
+        if (!groupedByDate[extractedDate]) {
+          groupedByDate[extractedDate] = [];
+        }
+        
+        groupedByDate[extractedDate].push({
+          id: tweetId,
+          ...metadata
+        });
+      }
+    });
+    
+    // 日付でソートして表示（新しい順）
+    Object.keys(groupedByDate)
+      .sort((a, b) => b.localeCompare(a))
+      .forEach(date => {
+        // 日付ヘッダー
+        const dateHeader = document.createElement('div');
+        dateHeader.textContent = `${date} (${groupedByDate[date].length}件)`;
+        dateHeader.style.fontWeight = 'bold';
+        dateHeader.style.padding = '10px 5px';
+        dateHeader.style.backgroundColor = '#f8f9fa';
+        dateHeader.style.borderBottom = '1px solid #dee2e6';
+        historyList.appendChild(dateHeader);
+        
+        // その日のツイート
+        groupedByDate[date].forEach(tweet => {
+          const tweetItem = document.createElement('div');
+          tweetItem.className = 'history-item';
+          
+          const tweetContent = document.createElement('div');
+          tweetContent.innerHTML = `
+            <div><strong>${tweet.userName || '不明'}</strong> @${tweet.userId || '不明'}</div>
+            <div>${tweet.tweetText || '内容なし'}</div>
+            <div style="font-size: 12px; color: #6c757d;">${tweet.date || '日時不明'}</div>
+          `;
+          
+          if (tweet.tweetUrl) {
+            const linkBtn = document.createElement('a');
+            linkBtn.href = tweet.tweetUrl;
+            linkBtn.target = '_blank';
+            linkBtn.textContent = 'ツイートを開く';
+            linkBtn.style.fontSize = '12px';
+            linkBtn.style.color = '#1DA1F2';
+            linkBtn.style.textDecoration = 'none';
+            linkBtn.style.display = 'block';
+            linkBtn.style.marginTop = '5px';
+            tweetContent.appendChild(linkBtn);
+          }
+          
+          tweetItem.appendChild(tweetContent);
+          historyList.appendChild(tweetItem);
+        });
+      });
+  }
+  
+  // 履歴をクリアする関数
+  function clearHistory() {
+    chrome.storage.local.remove(['savedTweetIds', 'savedTweetMetadata'], function() {
+      console.log('ブックマーク履歴をクリアしました');
+      savedTweetIds = new Set();
+      savedTweetMetadata = {};
+      
+      // UI更新
+      savedCountSpan.textContent = '0';
+      viewHistoryBtn.disabled = true;
+      clearHistoryBtn.disabled = true;
+      
+      // モーダルが開いていたら閉じる
+      if (historyModal.style.display === 'flex') {
+        historyModal.style.display = 'none';
+      }
+      
+      showStatus('ブックマーク履歴をクリアしました', 'success');
+    });
+  }
   
   // コピーボタンのクリックイベント
   copyBtn.addEventListener('click', function() {
