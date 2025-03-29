@@ -27,7 +27,7 @@ If you find a bug or have a feature request, please create an Issue on GitHub. W
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/x-bookmark-extractor.git
+   git clone https://github.com/hrtaym1114-github/x-bookmark-extractor.git
    ```
 
 2. Load it as a Chrome extension:

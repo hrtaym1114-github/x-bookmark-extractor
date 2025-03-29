@@ -77,7 +77,7 @@ X.com（旧Twitter）のブックマークページから指定した件数の�
 
 ## 作者
 
-- [あなたの名前](https://github.com/yourusername)
+- [hrtaym1114](https://github.com/hrtaym1114-github/)
 
 ## アイコンについて
 

@@ -27,7 +27,7 @@
 
 1. リポジトリをクローンします：
    ```
-   git clone https://github.com/yourusername/x-bookmark-extractor.git
+   git clone https://github.com/hrtaym1114-github/x-bookmark-extractor.git
    ```
 
 2. Chrome拡張機能として読み込みます：
